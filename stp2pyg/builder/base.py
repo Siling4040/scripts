@@ -12,26 +12,41 @@ from OCC.Core.TopExp import topexp
 from OCC.Core.BRepAdaptor import BRepAdaptor_Curve
 from OCC.Extend.TopologyUtils import TopologyExplorer
 
+import concurrent.futures
+import threading
+
 from utils.io import read_stp
 from utils.geom import is_3d_curve, is_seam
 
 class GraphBuilder:
-    def __init__(self, stp_dir, pyg_dir, extr, self_loop=False):
+    def __init__(self, stp_dir, pyg_dir, worker_num, extr, self_loop=False):
         self.stp_dir = stp_dir
         self.pyg_dir = pyg_dir
-        os.makedirs(self.pyg_dir, exist_ok=True)
-        
+        self.worker_num = worker_num
         self.extr = extr
-
         self.self_loop = False
 
+        os.makedirs(self.pyg_dir, exist_ok=True)
+
     def process(self):
-        for i, filename in enumerate(os.listdir(self.stp_dir)):
-            print(f"[{i+1}/{len(os.listdir(self.stp_dir))}] Processing {filename}...")
+        thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=self.worker_num)
+        submit_semaphore = threading.Semaphore(self.worker_num)
+        print("Thread pool created with {} workers.".format(self.worker_num))
+
+        print("Submitting tasks...")
+        filenames = os.listdir(self.stp_dir)
+        for i, filename in enumerate(filenames):
             if filename.endswith(".stp") or filename.endswith(".step"):
                 stp_path = os.path.join(self.stp_dir, filename)
                 pyg_path = os.path.join(self.pyg_dir, filename.replace(".stp", ".pyg").replace(".step", ".pyg"))
-                self.process_one_stp(stp_path, pyg_path)
+
+                # Submit tasks with semaphore control
+                submit_semaphore.acquire()
+                future = thread_pool.submit(self.process_one_stp, stp_path, pyg_path)
+                future.add_done_callback(lambda p: submit_semaphore.release())
+                print(f"[{i+1}/{len(filenames)}] {stp_path} submitted.")
+
+        thread_pool.shutdown(wait=True)
 
     def process_one_stp(self, stp_path, pyg_path):
         shape = read_stp(stp_path)
