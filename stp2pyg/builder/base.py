@@ -35,16 +35,15 @@ class GraphBuilder:
         submit_semaphore = threading.Semaphore(self.worker_num)
         print("Thread pool created with {} workers.".format(self.worker_num))
 
-        filenames = os.listdir(self.stp_dir)
+        filenames = [filename for filename in os.listdir(self.stp_dir) if filename.endswith(".stp") or filename.endswith(".step")]
         for filename in tqdm(filenames):
-            if filename.endswith(".stp") or filename.endswith(".step"):
-                stp_path = os.path.join(self.stp_dir, filename)
-                pyg_path = os.path.join(self.pyg_dir, filename.replace(".stp", ".pyg").replace(".step", ".pyg"))
+            stp_path = os.path.join(self.stp_dir, filename)
+            pyg_path = os.path.join(self.pyg_dir, filename.replace(".stp", ".pyg").replace(".step", ".pyg"))
 
-                # Submit tasks with semaphore control
-                submit_semaphore.acquire()
-                future = thread_pool.submit(self.process_one_stp, stp_path, pyg_path)
-                future.add_done_callback(lambda p: submit_semaphore.release())
+            # Submit tasks with semaphore control
+            submit_semaphore.acquire()
+            future = thread_pool.submit(self.process_one_stp, stp_path, pyg_path)
+            future.add_done_callback(lambda p: submit_semaphore.release())
 
         thread_pool.shutdown(wait=True)
 
@@ -61,7 +60,7 @@ class GraphBuilder:
         graph.edge_index = self.get_edge_index(shape, face_mapper)
         # Construct node and edge attributes
         graph.x = self.get_node_attrs(shape)
-        graph.edge_attrs = self.get_edge_attrs(shape)
+        graph.edge_attr = self.get_edge_attr(shape)
 
         if graph.validate():
             torch.save(graph, pyg_path)
@@ -110,8 +109,8 @@ class GraphBuilder:
 
         return torch.tensor(node_attrs)
 
-    def get_edge_attrs(self, shape):
-        edge_attrs = []
+    def get_edge_attr(self, shape):
+        edge_attr = []
 
         topExp = TopologyExplorer(shape)
         edges = topExp.edges()
@@ -123,9 +122,9 @@ class GraphBuilder:
             adj_faces = list(topExp.faces_from_edge(edge))
             if len(adj_faces) == 1:
                 if is_seam(edge, adj_faces[0]) and self.self_loop:
-                    edge_attrs.append(self.extr.edge(edge))
+                    edge_attr.append(self.extr.edge(edge))
             elif len(adj_faces) == 2:
-                edge_attrs.append(self.extr.edge(edge))
-                edge_attrs.append(self.extr.edge(edge))
+                edge_attr.append(self.extr.edge(edge))
+                edge_attr.append(self.extr.edge(edge))
 
-        return torch.tensor(edge_attrs)
+        return torch.tensor(edge_attr)
