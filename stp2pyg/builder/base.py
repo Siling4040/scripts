@@ -15,6 +15,8 @@ from OCC.Extend.TopologyUtils import TopologyExplorer
 import concurrent.futures
 import threading
 
+from tqdm import tqdm
+
 from utils.io import read_stp
 from utils.geom import is_3d_curve, is_seam
 
@@ -33,9 +35,8 @@ class GraphBuilder:
         submit_semaphore = threading.Semaphore(self.worker_num)
         print("Thread pool created with {} workers.".format(self.worker_num))
 
-        print("Submitting tasks...")
         filenames = os.listdir(self.stp_dir)
-        for i, filename in enumerate(filenames):
+        for filename in tqdm(filenames):
             if filename.endswith(".stp") or filename.endswith(".step"):
                 stp_path = os.path.join(self.stp_dir, filename)
                 pyg_path = os.path.join(self.pyg_dir, filename.replace(".stp", ".pyg").replace(".step", ".pyg"))
@@ -44,14 +45,13 @@ class GraphBuilder:
                 submit_semaphore.acquire()
                 future = thread_pool.submit(self.process_one_stp, stp_path, pyg_path)
                 future.add_done_callback(lambda p: submit_semaphore.release())
-                print(f"[{i+1}/{len(filenames)}] {stp_path} submitted.")
 
         thread_pool.shutdown(wait=True)
 
     def process_one_stp(self, stp_path, pyg_path):
         shape = read_stp(stp_path)
         if shape.IsNull():
-            print(f"[ERROR] Empty shape for {stp_path}, skipping...")
+            tqdm.write(f"[ERROR] Empty shape for {stp_path}, skipping...")
             return
         
         graph = Data()
@@ -65,9 +65,9 @@ class GraphBuilder:
 
         if graph.validate():
             torch.save(graph, pyg_path)
-            print(f"[INFO] {graph} saved to {pyg_path}")
+            tqdm.write(f"[INFO] {graph} saved to {pyg_path}")
         else:
-            print(f"[ERROR] Invalid graph for {stp_path}, skipping...")
+            tqdm.write(f"[ERROR] Invalid graph for {stp_path}, skipping...")
         
     def get_edge_index(self, shape, face_mapper):
         src = []
@@ -93,7 +93,7 @@ class GraphBuilder:
                 src.append(src_face_idx); dst.append(dst_face_idx)
                 src.append(dst_face_idx); dst.append(src_face_idx)
             else: # Non-manifold
-                print("[WARNING] Non-manifold edge detected")
+                tqdm.write("[WARNING] Non-manifold edge detected")
 
         src = torch.tensor(src, dtype=torch.long)
         dst = torch.tensor(dst, dtype=torch.long)

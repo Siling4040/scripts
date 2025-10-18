@@ -11,7 +11,7 @@ if __name__ == "__main__":
     parser.add_argument("-w", type=int, default=4, help="Number of worker threads for processing.")
     args = parser.parse_args()
 
-    print("Start constructing graph from STEP files...")
+    print("Start building graph from STEP files...")
     constructor = GraphBuilder(args.i, args.o, args.w, AttrExtrUVNet())
     constructor.process()
     print("Finished.")
